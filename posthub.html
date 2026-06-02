@@ -1927,8 +1927,9 @@ textarea { resize: vertical; min-height: 90px; line-height: 1.6; }
           <input type="number" id="fbm-repeat" value="1" min="1" max="20" oninput="saveKey('fbm-repeat',this.value)">
           <p class="tip">Posting listing yang sama beberapa kali (misal 3x untuk lebih terekspos)</p>
 
-          <label style="margin-top:10px;">Delay antar posting (detik)</label>
-          <input type="number" id="fbm-delay" value="10" min="5" max="120" oninput="saveKey('fbm-delay',this.value)">
+          <label style="margin-top:10px;">Delay antar posting (menit)</label>
+          <input type="number" id="fbm-delay" value="30" min="1" max="1440" oninput="saveKey('fbm-delay',this.value)">
+          <p class="tip">Rekomendasi 30-60 menit antar listing agar tidak kena restrict</p>
 
           <label style="margin-top:10px;">Area Pengiriman</label>
           <select id="fbm-shipping" onchange="saveKey('fbm-shipping',this.value)">
@@ -1936,6 +1937,43 @@ textarea { resize: vertical; min-height: 90px; line-height: 1.6; }
             <option value="nationwide">Seluruh Indonesia</option>
             <option value="both">Lokal + Pengiriman</option>
           </select>
+        </div>
+
+        <!-- JADWAL POSTING -->
+        <div class="card" style="margin-top:12px;">
+          <div class="card-title">🕐 Jadwal Posting Otomatis</div>
+
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+            <label style="margin:0;color:var(--text);">Aktifkan Jadwal</label>
+            <div class="toggle-wrap" style="margin-left:auto;">
+              <input type="checkbox" id="fbm-schedule-on" onchange="fbmToggleSchedule(this.checked)" style="width:auto;">
+            </div>
+          </div>
+
+          <div id="fbm-schedule-fields" style="display:none;">
+            <label>Jam Posting (setiap hari)</label>
+            <div id="fbm-schedule-times" style="display:flex;flex-direction:column;gap:6px;margin-bottom:8px;">
+              <div style="display:flex;gap:8px;align-items:center;">
+                <input type="time" class="fbm-time-input" value="09:00" style="flex:1;">
+                <button onclick="fbmRemoveTime(this)" class="btn btn-outline btn-sm" style="width:auto;padding:4px 10px;">✕</button>
+              </div>
+            </div>
+            <button onclick="fbmAddTime()" class="btn btn-outline btn-sm" style="margin-bottom:10px;">+ Tambah Jam</button>
+
+            <div id="fbm-schedule-status" style="background:var(--bg3);border-radius:6px;padding:8px 10px;font-size:0.78rem;color:var(--muted);">
+              Jadwal belum aktif
+            </div>
+          </div>
+        </div>
+
+        <!-- VARIASI JUDUL -->
+        <div class="card" style="margin-top:12px;">
+          <div class="card-title">🔀 Variasi Judul</div>
+          <p class="tip" style="margin-bottom:8px;">Tiap posting pakai judul berbeda agar tidak dianggap spam. Kosongkan untuk pakai judul utama.</p>
+          <div id="fbm-title-variants" style="display:flex;flex-direction:column;gap:6px;margin-bottom:8px;">
+          </div>
+          <button onclick="fbmAddVariant()" class="btn btn-outline btn-sm">+ Tambah Variasi Judul</button>
+          <p class="tip" style="margin-top:6px;">Judul dirotasi berurutan: posting 1 → variasi 1, posting 2 → variasi 2, dst.</p>
         </div>
 
         <!-- Preview Panel -->
@@ -2139,6 +2177,13 @@ function syncKey(k, v) {
 let fbmImages = [];
 
 function fbmLoadSaved() {
+  fbmLoadTimes();
+  fbmLoadVariants();
+  // Restore schedule toggle
+  if (getKey('fbm-schedule-on') === '1') {
+    const cb = document.getElementById('fbm-schedule-on');
+    if (cb) { cb.checked = true; fbmToggleSchedule(true); }
+  }
   const fields = ['fbm-title','fbm-price','fbm-category','fbm-condition','fbm-location','fbm-desc','fbm-link','fbm-img-url','fbm-repeat','fbm-delay','fbm-shipping'];
   fields.forEach(id => {
     const el = document.getElementById(id);
@@ -2230,6 +2275,133 @@ function fbmPreview() {
     ${fbmImages.length > 1 ? `<div style="font-size:0.72rem;color:var(--muted);margin-top:6px;">+${fbmImages.length-1} foto lainnya</div>` : ''}`;
 }
 
+// ── FB Marketplace: Schedule & Title Variants ──
+
+let fbmScheduleTimer = null;
+
+function fbmToggleSchedule(on) {
+  document.getElementById('fbm-schedule-fields').style.display = on ? 'block' : 'none';
+  saveKey('fbm-schedule-on', on ? '1' : '0');
+  if (on) {
+    fbmStartSchedule();
+  } else {
+    if (fbmScheduleTimer) { clearInterval(fbmScheduleTimer); fbmScheduleTimer = null; }
+    document.getElementById('fbm-schedule-status').textContent = 'Jadwal dimatikan';
+  }
+}
+
+function fbmAddTime() {
+  const wrap = document.getElementById('fbm-schedule-times');
+  const div = document.createElement('div');
+  div.style.cssText = 'display:flex;gap:8px;align-items:center;';
+  div.innerHTML = `<input type="time" class="fbm-time-input" value="12:00" style="flex:1;">
+    <button class="btn btn-outline btn-sm" style="width:auto;padding:4px 10px;" onclick="fbmRemoveTime(this)">✕</button>`;
+  wrap.appendChild(div);
+  fbmSaveTimes();
+}
+
+function fbmRemoveTime(btn) {
+  const row = btn.closest('div');
+  if (document.querySelectorAll('.fbm-time-input').length > 1) {
+    row.remove();
+    fbmSaveTimes();
+  }
+}
+
+function fbmSaveTimes() {
+  const times = [...document.querySelectorAll('.fbm-time-input')].map(i => i.value);
+  saveKey('fbm-schedule-times', JSON.stringify(times));
+}
+
+function fbmLoadTimes() {
+  const raw = getKey('fbm-schedule-times');
+  if (!raw) return;
+  try {
+    const times = JSON.parse(raw);
+    const wrap = document.getElementById('fbm-schedule-times');
+    if (!wrap) return;
+    wrap.innerHTML = '';
+    times.forEach(t => {
+      const div = document.createElement('div');
+      div.style.cssText = 'display:flex;gap:8px;align-items:center;';
+      div.innerHTML = `<input type="time" class="fbm-time-input" value="${t}" style="flex:1;" oninput="fbmSaveTimes()">
+        <button class="btn btn-outline btn-sm" style="width:auto;padding:4px 10px;" onclick="fbmRemoveTime(this)">✕</button>`;
+      wrap.appendChild(div);
+    });
+  } catch {}
+}
+
+function fbmStartSchedule() {
+  if (fbmScheduleTimer) clearInterval(fbmScheduleTimer);
+  fbmUpdateScheduleStatus();
+  fbmScheduleTimer = setInterval(() => {
+    fbmCheckSchedule();
+    fbmUpdateScheduleStatus();
+  }, 30000); // check every 30s
+}
+
+function fbmCheckSchedule() {
+  const now = new Date();
+  const hhmm = now.getHours().toString().padStart(2,'0') + ':' + now.getMinutes().toString().padStart(2,'0');
+  const times = [...document.querySelectorAll('.fbm-time-input')].map(i => i.value);
+  if (times.includes(hhmm)) {
+    fbmLog('⏰ Jadwal terpicu: ' + hhmm + ' — mulai posting...', 'info');
+    fbmStartPost();
+  }
+}
+
+function fbmUpdateScheduleStatus() {
+  const el = document.getElementById('fbm-schedule-status');
+  if (!el) return;
+  const times = [...document.querySelectorAll('.fbm-time-input')].map(i => i.value).sort();
+  const now = new Date();
+  const hhmm = now.getHours().toString().padStart(2,'0') + ':' + now.getMinutes().toString().padStart(2,'0');
+  const next = times.find(t => t > hhmm) || times[0];
+  el.innerHTML = `<span style="color:var(--success);">● Aktif</span> — Jam terjadwal: <b>${times.join(', ')}</b><br>Posting berikutnya: <b>${next || '-'}</b>`;
+}
+
+// ── Title Variants ──
+let fbmVariants = [];
+
+function fbmAddVariant(val = '') {
+  fbmVariants.push(val);
+  fbmRenderVariants();
+  fbmSaveVariants();
+}
+
+function fbmRemoveVariant(idx) {
+  fbmVariants.splice(idx, 1);
+  fbmRenderVariants();
+  fbmSaveVariants();
+}
+
+function fbmRenderVariants() {
+  const wrap = document.getElementById('fbm-title-variants');
+  if (!wrap) return;
+  wrap.innerHTML = fbmVariants.map((v, i) => `
+    <div style="display:flex;gap:8px;align-items:center;">
+      <input type="text" value="${v.replace(/"/g,'&quot;')}" placeholder="Variasi judul ${i+1}"
+        style="flex:1;" oninput="fbmVariants[${i}]=this.value;fbmSaveVariants();">
+      <button onclick="fbmRemoveVariant(${i})" class="btn btn-outline btn-sm" style="width:auto;padding:4px 10px;">✕</button>
+    </div>`).join('');
+}
+
+function fbmSaveVariants() {
+  saveKey('fbm-variants', JSON.stringify(fbmVariants));
+}
+
+function fbmLoadVariants() {
+  const raw = getKey('fbm-variants');
+  if (!raw) return;
+  try { fbmVariants = JSON.parse(raw); fbmRenderVariants(); } catch {}
+}
+
+function fbmGetTitleForRound(round) {
+  // round starts at 0
+  if (fbmVariants.length === 0) return document.getElementById('fbm-title')?.value?.trim() || '';
+  return fbmVariants[round % fbmVariants.length] || document.getElementById('fbm-title')?.value?.trim() || '';
+}
+
 function fbmGetData() {
   return {
     title:    document.getElementById('fbm-title')?.value?.trim()||'',
@@ -2242,7 +2414,7 @@ function fbmGetData() {
     imgUrl:   document.getElementById('fbm-img-url')?.value?.trim()||'',
     images:   fbmImages.map(i=>({dataUrl:i.dataUrl,type:i.type})),
     repeat:   parseInt(document.getElementById('fbm-repeat')?.value)||1,
-    delay:    parseInt(document.getElementById('fbm-delay')?.value)||10,
+    delay:    (parseInt(document.getElementById('fbm-delay')?.value)||30) * 60, // convert minutes to seconds
     shipping: document.getElementById('fbm-shipping')?.value||'local',
   };
 }
@@ -2254,7 +2426,16 @@ async function fbmStartPost() {
   if (!d.location) { showToast('Isi lokasi dulu!', 'warn'); return; }
   if (!d.desc)     { showToast('Isi deskripsi dulu!', 'warn'); return; }
 
-  localStorage.setItem('ph_fbm_job', JSON.stringify({ action: 'POST_MARKETPLACE', data: d, timestamp: Date.now() }));
+  // Apply title variants - modify data for each round
+  const repeat = d.repeat || 1;
+  const jobsData = [];
+  for (let i = 0; i < repeat; i++) {
+    const roundData = { ...d, repeat: 1, title: fbmGetTitleForRound(i) || d.title };
+    jobsData.push(roundData);
+  }
+  // Send first job now, rest will be queued
+  const firstJob = { ...d, repeat: 1, title: jobsData[0].title, titleVariants: jobsData.map(j => j.title) };
+  localStorage.setItem('ph_fbm_job', JSON.stringify({ action: 'POST_MARKETPLACE', data: firstJob, timestamp: Date.now() }));
   fbmLog('Job dikirim ke ekstensi Chrome...', 'info');
   fbmLog('Produk: ' + d.title + ' - Rp ' + Number(d.price).toLocaleString('id-ID'), 'info');
   fbmLog('Akan diposting ' + d.repeat + 'x dengan delay ' + d.delay + ' detik', 'info');
