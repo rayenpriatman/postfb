@@ -1907,17 +1907,40 @@ textarea { resize: vertical; min-height: 90px; line-height: 1.6; }
       <!-- KANAN: Gambar & Pengaturan -->
       <div>
         <div class="card">
-          <div class="card-title">🖼️ Foto Produk</div>
-          <div id="fbm-img-drop" style="border:2px dashed var(--border);border-radius:8px;padding:24px;text-align:center;cursor:pointer;transition:all 0.2s;margin-bottom:8px;">
-            <div style="font-size:28px;margin-bottom:6px;">📷</div>
+          <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;">
+            <span>🖼️ Daftar Foto Produk</span>
+            <div style="display:flex;gap:6px;align-items:center;">
+              <span style="font-size:0.72rem;color:var(--muted);">Mode:</span>
+              <select id="fbm-img-mode" onchange="saveKey('fbm-img-mode',this.value)" style="font-size:0.72rem;padding:3px 6px;width:auto;">
+                <option value="sequential">Berurutan</option>
+                <option value="random">Acak</option>
+              </select>
+            </div>
+          </div>
+          <p class="tip" style="margin-bottom:8px;">Tambah banyak foto — tiap posting pakai foto berbeda (berurutan/acak). Foto yang sudah dipakai tetap di list.</p>
+
+          <!-- Upload area -->
+          <div id="fbm-img-drop" style="border:2px dashed var(--border);border-radius:8px;padding:16px;text-align:center;cursor:pointer;transition:all 0.2s;margin-bottom:8px;">
+            <div style="font-size:24px;margin-bottom:4px;">📷</div>
             <div style="font-size:0.82rem;color:var(--muted);">Klik atau drag & drop foto produk</div>
-            <div style="font-size:0.72rem;color:var(--muted);margin-top:3px;">JPG, PNG — maks 8MB, bisa multiple</div>
+            <div style="font-size:0.72rem;color:var(--muted);margin-top:2px;">JPG, PNG — maks 8MB, bisa multiple sekaligus</div>
           </div>
           <input type="file" id="fbm-img-input" accept="image/*" multiple style="display:none;">
-          <div id="fbm-img-preview" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;"></div>
 
-          <label style="margin-top:10px;">atau URL Gambar</label>
-          <input type="text" id="fbm-img-url" placeholder="https://i.imgur.com/..." oninput="saveKey('fbm-img-url',this.value)">
+          <!-- Photo list -->
+          <div id="fbm-img-list" style="display:flex;flex-direction:column;gap:6px;margin-bottom:8px;max-height:200px;overflow-y:auto;"></div>
+
+          <div style="display:flex;gap:8px;">
+            <button onclick="fbmClearImages()" class="btn btn-outline btn-sm" style="width:auto;font-size:0.72rem;">🗑 Hapus Semua</button>
+            <span id="fbm-img-count" style="font-size:0.72rem;color:var(--muted);margin-left:auto;align-self:center;">0 foto</span>
+          </div>
+
+          <label style="margin-top:10px;">atau tambah via URL</label>
+          <div style="display:flex;gap:6px;">
+            <input type="text" id="fbm-img-url-input" placeholder="https://i.imgur.com/..." style="flex:1;">
+            <button onclick="fbmAddImageUrl()" class="btn btn-outline btn-sm" style="width:auto;">Tambah</button>
+          </div>
+          <input type="text" id="fbm-img-url" style="display:none;">
         </div>
 
         <div class="card" style="margin-top:12px;">
@@ -2179,6 +2202,9 @@ let fbmImages = [];
 function fbmLoadSaved() {
   fbmLoadTimes();
   fbmLoadVariants();
+  fbmLoadImages();
+  const imgMode = getKey('fbm-img-mode');
+  if (imgMode) { const el = document.getElementById('fbm-img-mode'); if (el) el.value = imgMode; }
   // Restore schedule toggle
   if (getKey('fbm-schedule-on') === '1') {
     const cb = document.getElementById('fbm-schedule-on');
@@ -2218,21 +2244,79 @@ function fbmLoadSaved() {
 function fbmAddImage(file) {
   if (file.size > 8 * 1024 * 1024) { showToast('Gambar max 8MB', 'warn'); return; }
   const reader = new FileReader();
-  reader.onload = e => { fbmImages.push({ dataUrl: e.target.result, type: file.type, name: file.name }); fbmRenderPreviews(); };
+  reader.onload = e => {
+    fbmImages.push({ dataUrl: e.target.result, type: file.type, name: file.name, source: 'local' });
+    fbmRenderImageList();
+    fbmSaveImages();
+  };
   reader.readAsDataURL(file);
 }
 
-function fbmRenderPreviews() {
-  const wrap = document.getElementById('fbm-img-preview');
-  if (!wrap) return;
-  wrap.innerHTML = fbmImages.map((img, i) => `
-    <div style="position:relative;display:inline-block;">
-      <img src="${img.dataUrl}" style="width:70px;height:70px;object-fit:cover;border-radius:6px;border:1px solid var(--border);">
-      <div style="position:absolute;top:-5px;right:-5px;width:18px;height:18px;background:#f74a4a;border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:10px;color:#fff;" onclick="fbmRemoveImage(${i})">&#x2715;</div>
+function fbmAddImageUrl() {
+  const input = document.getElementById('fbm-img-url-input');
+  const url = input?.value?.trim();
+  if (!url) return;
+  fbmImages.push({ dataUrl: url, type: 'url', name: url.split('/').pop() || 'image', source: 'url' });
+  if (input) input.value = '';
+  fbmRenderImageList();
+  fbmSaveImages();
+  showToast('URL gambar ditambahkan');
+}
+
+function fbmRenderImageList() {
+  const list = document.getElementById('fbm-img-list');
+  const count = document.getElementById('fbm-img-count');
+  if (!list) return;
+  if (count) count.textContent = fbmImages.length + ' foto';
+
+  list.innerHTML = fbmImages.map((img, i) => `
+    <div style="display:flex;align-items:center;gap:8px;padding:6px;background:var(--bg3);border-radius:6px;border:1px solid var(--border);">
+      <img src="${img.dataUrl}" style="width:44px;height:44px;object-fit:cover;border-radius:4px;flex-shrink:0;" onerror="this.style.display='none'">
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:0.78rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${img.name}</div>
+        <div style="font-size:0.68rem;color:var(--muted);">${img.source === 'url' ? '🔗 URL' : '📁 Lokal'}</div>
+      </div>
+      <button onclick="fbmRemoveImage(${i})" style="background:none;border:none;color:var(--danger);cursor:pointer;font-size:14px;padding:2px 6px;">✕</button>
     </div>`).join('');
 }
 
-function fbmRemoveImage(idx) { fbmImages.splice(idx, 1); fbmRenderPreviews(); }
+function fbmRemoveImage(idx) { fbmImages.splice(idx, 1); fbmRenderImageList(); fbmSaveImages(); }
+
+function fbmClearImages() {
+  if (!confirm('Hapus semua foto?')) return;
+  fbmImages = []; fbmRenderImageList(); fbmSaveImages();
+}
+
+function fbmSaveImages() {
+  // Save only URL-based images (local files too large for localStorage)
+  const toSave = fbmImages.map(img => ({
+    ...img,
+    dataUrl: img.source === 'url' ? img.dataUrl : img.dataUrl // keep all for now
+  }));
+  try { saveKey('fbm-images', JSON.stringify(toSave)); } catch(e) {
+    // If too large, save only URLs
+    const urlOnly = fbmImages.filter(i => i.source === 'url');
+    try { saveKey('fbm-images', JSON.stringify(urlOnly)); } catch {}
+  }
+}
+
+function fbmLoadImages() {
+  const raw = getKey('fbm-images');
+  if (!raw) return;
+  try { fbmImages = JSON.parse(raw); fbmRenderImageList(); } catch {}
+}
+
+function fbmGetNextImage() {
+  if (fbmImages.length === 0) return null;
+  const mode = document.getElementById('fbm-img-mode')?.value || 'sequential';
+  if (mode === 'random') {
+    return fbmImages[Math.floor(Math.random() * fbmImages.length)];
+  }
+  // Sequential: use index that cycles
+  const idx = parseInt(getKey('fbm-img-index') || '0') % fbmImages.length;
+  saveKey('fbm-img-index', String((idx + 1) % fbmImages.length));
+  return fbmImages[idx];
+}
 
 function fbmLog(msg, type='info') {
   const log = document.getElementById('fbm-log');
@@ -2421,11 +2505,32 @@ function fbmGetData() {
     desc:     document.getElementById('fbm-desc')?.value?.trim()||'',
     link:     document.getElementById('fbm-link')?.value?.trim()||'',
     imgUrl:   document.getElementById('fbm-img-url')?.value?.trim()||'',
-    images:   fbmImages.map(i=>({dataUrl:i.dataUrl,type:i.type})),
+    images:   fbmGetNextImage() ? [fbmGetNextImage()] : fbmImages.slice(0,1).map(i=>({dataUrl:i.dataUrl,type:i.type})),
     repeat:   parseInt(document.getElementById('fbm-repeat')?.value)||1,
     delay:    (parseInt(document.getElementById('fbm-delay')?.value)||30) * 60, // convert minutes to seconds
     shipping: document.getElementById('fbm-shipping')?.value||'local',
   };
+}
+
+// Track which variant index to use next
+let fbmVariantIndex = 0;
+
+function fbmGetNextTitle() {
+  const mainTitle = document.getElementById('fbm-title')?.value?.trim() || '';
+  if (fbmVariants.length === 0) return mainTitle;
+  // Use current index, then advance
+  const title = fbmVariants[fbmVariantIndex] || mainTitle;
+  return title;
+}
+
+function fbmConsumeVariant() {
+  // Remove the first variant after use (consume it)
+  if (fbmVariants.length > 0) {
+    fbmVariants.shift(); // remove first element
+    fbmRenderVariants();
+    fbmSaveVariants();
+    fbmLog('Variasi judul dipakai & dihapus. Sisa: ' + fbmVariants.length, 'info');
+  }
 }
 
 async function fbmStartPost() {
@@ -2435,19 +2540,31 @@ async function fbmStartPost() {
   if (!d.location) { showToast('Isi lokasi dulu!', 'warn'); return; }
   if (!d.desc)     { showToast('Isi deskripsi dulu!', 'warn'); return; }
 
-  // Apply title variants - modify data for each round
+  // Get title: use first variant if available, else main title
+  const titleToUse = fbmGetNextTitle();
+
+  // Build title variants list for all rounds
   const repeat = d.repeat || 1;
-  const jobsData = [];
+  const titleVariants = [];
+  const variantsCopy = [...fbmVariants]; // snapshot
   for (let i = 0; i < repeat; i++) {
-    const roundData = { ...d, repeat: 1, title: fbmGetTitleForRound(i) || d.title };
-    jobsData.push(roundData);
+    if (variantsCopy.length > 0) {
+      titleVariants.push(variantsCopy.shift());
+    } else {
+      titleVariants.push(d.title);
+    }
   }
-  // Send first job now, rest will be queued
-  const firstJob = { ...d, repeat: 1, title: jobsData[0].title, titleVariants: jobsData.map(j => j.title) };
-  localStorage.setItem('ph_fbm_job', JSON.stringify({ action: 'POST_MARKETPLACE', data: firstJob, timestamp: Date.now() }));
+
+  const jobData = {
+    ...d,
+    title: titleToUse,
+    titleVariants: titleVariants,
+  };
+
+  localStorage.setItem('ph_fbm_job', JSON.stringify({ action: 'POST_MARKETPLACE', data: jobData, timestamp: Date.now() }));
   fbmLog('Job dikirim ke ekstensi Chrome...', 'info');
-  fbmLog('Produk: ' + d.title + ' - Rp ' + Number(d.price).toLocaleString('id-ID'), 'info');
-  fbmLog('Akan diposting ' + d.repeat + 'x dengan delay ' + d.delay + ' detik', 'info');
+  fbmLog('Judul: ' + titleToUse + ' — Rp ' + Number(d.price).toLocaleString('id-ID'), 'info');
+  fbmLog('Akan diposting ' + repeat + 'x', 'info');
   showToast('Job dikirim ke ekstensi! Pastikan ekstensi aktif di Chrome.');
   const bar = document.getElementById('fbm-status-bar');
   if (bar) bar.style.display = 'block';
@@ -2468,6 +2585,9 @@ async function fbmStartPost() {
         document.getElementById('fbm-dot').style.background = 'var(--success)';
         document.getElementById('fbm-dot').style.animation = 'none';
         showToast('Produk berhasil dipost ke Marketplace!');
+        // Consume used variants
+        const usedCount = res.count || 1;
+        for (let i = 0; i < usedCount; i++) fbmConsumeVariant();
       } else {
         fbmLog('Gagal: ' + (res.error||'Unknown'), 'error');
         document.getElementById('fbm-status-text').textContent = 'Gagal';
