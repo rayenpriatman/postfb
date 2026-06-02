@@ -2337,16 +2337,25 @@ function fbmStartSchedule() {
   fbmScheduleTimer = setInterval(() => {
     fbmCheckSchedule();
     fbmUpdateScheduleStatus();
-  }, 30000); // check every 30s
+  }, 10000); // check every 10s
 }
 
+let fbmLastTriggered = '';
 function fbmCheckSchedule() {
   const now = new Date();
   const hhmm = now.getHours().toString().padStart(2,'0') + ':' + now.getMinutes().toString().padStart(2,'0');
   const times = [...document.querySelectorAll('.fbm-time-input')].map(i => i.value);
-  if (times.includes(hhmm)) {
+  
+  // Match exact minute, prevent double-trigger within same minute
+  const matched = times.find(t => t === hhmm);
+  if (matched && fbmLastTriggered !== hhmm) {
+    fbmLastTriggered = hhmm;
     fbmLog('⏰ Jadwal terpicu: ' + hhmm + ' — mulai posting...', 'info');
     fbmStartPost();
+  }
+  // Reset last triggered when minute changes
+  if (!times.includes(fbmLastTriggered) && fbmLastTriggered !== hhmm) {
+    fbmLastTriggered = '';
   }
 }
 
