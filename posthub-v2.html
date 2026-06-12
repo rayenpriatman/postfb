@@ -3052,7 +3052,14 @@ async function fbmStartPost() {
       }
     } catch(e) {}
   }, 2000);
-  setTimeout(() => clearInterval(interval), 5*60*1000);
+  // Timeout dinamis: repeat × (delay per round + 3 menit per posting) + 5 menit buffer
+  // d.delay sudah dalam detik, repeat sudah diketahui
+  const timeoutMs = ((repeat * (d.delay + 180)) + 300) * 1000;
+  fbmLog(`⏱ Menunggu hasil hingga ${Math.round(timeoutMs/60000)} menit...`, 'info');
+  setTimeout(() => {
+    clearInterval(interval);
+    fbmLog('⚠️ Polling timeout — cek ekstensi secara manual.', 'warn');
+  }, timeoutMs);
 }
 
 document.addEventListener('DOMContentLoaded', () => {
