@@ -2965,37 +2965,10 @@ async function fbmStartPost() {
     titleVariants: titleVariants,
     location: locationVariants[0] || d.location,
     locationVariants: locationVariants,
+    // Metadata gambar — ekstensi baca langsung dari fbmImages di tab ini via executeScript
+    imageCount: fbmImages.length,
+    imageMode:  document.getElementById('fbm-img-mode')?.value || 'sequential',
   };
-
-  // Kirim semua foto ke chrome.storage satu per satu via ekstensi
-  // Pendekatan: tiap foto disimpan dengan key fbm_img_0, fbm_img_1, dst.
-  // Ekstensi ambil foto sesuai index round saat posting
-  const imgMode = document.getElementById('fbm-img-mode')?.value || 'sequential';
-  const imgIndex = parseInt(getKey('fbm-img-index') || '0');
-
-  if (fbmImages.length > 0 && typeof chrome !== 'undefined' && chrome.runtime) {
-    fbmLog('📤 Mengirim ' + fbmImages.length + ' foto ke ekstensi...', 'info');
-    // Kirim satu per satu agar tidak melebihi batas message size
-    let sentCount = 0;
-    for (let i = 0; i < fbmImages.length; i++) {
-      const img = fbmImages[i];
-      try {
-        await new Promise((resolve) => {
-          chrome.runtime.sendMessage(
-            { action: 'FBM_STORE_IMAGE', index: i, dataUrl: img.dataUrl || null, type: img.type || 'image/png', name: img.name || 'photo.png', source: img.source || 'local' },
-            (resp) => { if (resp?.ok) sentCount++; resolve(); }
-          );
-        });
-      } catch(e) { console.warn('FBM_STORE_IMAGE gagal index ' + i, e); }
-    }
-    fbmLog('✅ ' + sentCount + '/' + fbmImages.length + ' foto tersimpan di ekstensi', sentCount > 0 ? 'success' : 'warn');
-  }
-
-  // jobData hanya menyimpan metadata foto — dataUrl ada di chrome.storage ekstensi
-  jobData.imageCount  = fbmImages.length;
-  jobData.imageMode   = imgMode;
-  jobData.imageIndex  = imgIndex; // index awal untuk sequential
-  // Tidak ada dataUrl di sini — ekstensi ambil dari chrome.storage
 
   try {
     localStorage.setItem('ph_fbm_job', JSON.stringify({ action: 'POST_MARKETPLACE', data: jobData, timestamp: Date.now() }));
