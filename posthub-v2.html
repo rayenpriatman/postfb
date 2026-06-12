@@ -2782,6 +2782,23 @@ function fbmConsumeVariant() {
   }
 }
 
+function fbmConsumeImage() {
+  if (fbmImages.length > 0) {
+    fbmImages.shift();
+    fbmRenderImageList();
+    fbmSaveImages();
+    saveKey('fbm-img-index', '0'); // reset index agar posting berikutnya mulai dari foto pertama yang tersisa
+  }
+}
+
+function fbmConsumeLocation() {
+  if (fbmLocations.length > 0) {
+    fbmLocations.shift();
+    fbmRenderLocations();
+    fbmSaveLocations();
+  }
+}
+
 // ── FB Marketplace: Location Variants ──
 let fbmLocations = [];
 let fbmLocationIndex = 0;
@@ -3008,9 +3025,14 @@ async function fbmStartPost() {
         document.getElementById('fbm-dot').style.background = 'var(--success)';
         document.getElementById('fbm-dot').style.animation = 'none';
         showToast('Produk berhasil dipost ke Marketplace!');
-        // Consume used variants
+        // Consume semua yang sudah dipakai: judul, foto, lokasi
         const usedCount = res.count || 1;
-        for (let i = 0; i < usedCount; i++) fbmConsumeVariant();
+        for (let i = 0; i < usedCount; i++) {
+          fbmConsumeVariant();
+          fbmConsumeImage();
+          fbmConsumeLocation();
+        }
+        fbmLog(`🗑 ${usedCount} judul, foto, dan lokasi dihapus dari daftar.`, 'info');
       } else {
         fbmLog('Gagal: ' + (res.error||'Unknown'), 'error');
         document.getElementById('fbm-status-text').textContent = 'Gagal';
