@@ -2742,6 +2742,9 @@ function fbmGetTitleForRound(round) {
 }
 
 function fbmGetData() {
+  // Ambil 1 gambar sesuai mode (sequential/random) — langsung sertakan dataUrl
+  const imgObj = fbmGetNextImage();
+  const images = imgObj ? [{ dataUrl: imgObj.dataUrl, type: imgObj.type || 'image/png', name: imgObj.name || 'photo.png' }] : [];
   return {
     title:    document.getElementById('fbm-title')?.value?.trim()||'',
     price:    document.getElementById('fbm-price')?.value?.trim()||'',
@@ -2751,7 +2754,7 @@ function fbmGetData() {
     desc:     document.getElementById('fbm-desc')?.value?.trim()||'',
     link:     document.getElementById('fbm-link')?.value?.trim()||'',
     imgUrl:   document.getElementById('fbm-img-url')?.value?.trim()||'',
-    // images tidak disertakan di sini — dikirim terpisah via FBM_STORE_IMAGES
+    images,
     repeat:   parseInt(document.getElementById('fbm-repeat')?.value)||1,
     delay:    (parseInt(document.getElementById('fbm-delay')?.value)||30) * 60,
     shipping: document.getElementById('fbm-shipping')?.value||'local',
@@ -2965,17 +2968,21 @@ async function fbmStartPost() {
     titleVariants: titleVariants,
     location: locationVariants[0] || d.location,
     locationVariants: locationVariants,
-    // Metadata gambar — ekstensi baca langsung dari fbmImages di tab ini via executeScript
-    imageCount: fbmImages.length,
-    imageMode:  document.getElementById('fbm-img-mode')?.value || 'sequential',
   };
 
   try {
     localStorage.setItem('ph_fbm_job', JSON.stringify({ action: 'POST_MARKETPLACE', data: jobData, timestamp: Date.now() }));
   } catch(e) {
-    fbmLog('❌ localStorage penuh. Coba hapus data browser.', 'error');
-    showToast('Gagal kirim job: localStorage penuh!');
-    return;
+    // Kalau localStorage penuh karena gambar, coba tanpa dataUrl
+    const jobLite = { ...jobData, images: jobData.images?.map(i => ({ ...i, dataUrl: null })) };
+    try {
+      localStorage.setItem('ph_fbm_job', JSON.stringify({ action: 'POST_MARKETPLACE', data: jobLite, timestamp: Date.now() }));
+      fbmLog('⚠️ Gambar tidak bisa disertakan (localStorage penuh). Posting tanpa foto.', 'warn');
+    } catch(e2) {
+      fbmLog('❌ localStorage penuh. Coba hapus data browser.', 'error');
+      showToast('Gagal kirim job: localStorage penuh!');
+      return;
+    }
   }
   fbmLog('Job dikirim ke ekstensi Chrome...', 'info');
   fbmLog('Judul: ' + titleToUse + ' — Rp ' + Number(d.price).toLocaleString('id-ID'), 'info');
