@@ -2231,6 +2231,18 @@ function syncKey(k, v) {
 
 let fbmImages = [];
 
+// Expose ke window agar bisa dibaca oleh ekstensi via executeScript
+// (let/const tidak otomatis jadi window property)
+window.fbmGetImageForRound = function(roundIdx, mode) {
+  if (!fbmImages || fbmImages.length === 0) return null;
+  const img = mode === 'random'
+    ? fbmImages[Math.floor(Math.random() * fbmImages.length)]
+    : fbmImages[roundIdx % fbmImages.length];
+  return (img && img.dataUrl)
+    ? { dataUrl: img.dataUrl, type: img.type || 'image/png', name: img.name || 'photo.png' }
+    : null;
+};
+
 function fbmLoadSaved() {
   fbmLoadTimes();
   fbmLoadVariants();
