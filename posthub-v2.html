@@ -1904,7 +1904,10 @@ textarea { resize: vertical; min-height: 90px; line-height: 1.6; }
             </div>
             <div id="fbm-location-variants" style="display:flex;flex-direction:column;gap:6px;max-height:180px;overflow-y:auto;"></div>
             <div style="display:flex;gap:8px;margin-top:6px;align-items:center;flex-wrap:wrap;">
-              <button onclick="fbmImportLocations()" class="btn btn-outline btn-sm" style="width:auto;font-size:0.72rem;padding:4px 10px;">📋 Import dari teks</button>
+              <button onclick="fbmImportLocations()" class="btn btn-outline btn-sm" style="width:auto;font-size:0.72rem;padding:4px 10px;">📋 Import teks</button>
+              <label for="fbm-loc-csv-input" class="btn btn-outline btn-sm" style="cursor:pointer;margin:0;font-size:0.72rem;padding:4px 10px;">📂 Import CSV</label>
+              <input type="file" id="fbm-loc-csv-input" accept=".csv,text/csv" style="display:none;" onchange="fbmImportLocationsCSV(this)">
+              <button onclick="fbmDownloadTemplate('lokasi')" class="btn btn-outline btn-sm" style="width:auto;font-size:0.72rem;padding:4px 10px;">⬇ Template</button>
               <button onclick="fbmClearLocations()" class="btn btn-danger btn-sm" style="width:auto;font-size:0.72rem;padding:4px 10px;">🗑 Hapus semua</button>
               <span id="fbm-loc-count" style="font-size:0.72rem;color:var(--muted);margin-left:auto;">0 lokasi</span>
             </div>
@@ -2018,6 +2021,7 @@ textarea { resize: vertical; min-height: 90px; line-height: 1.6; }
             <button onclick="fbmAddVariant()" class="btn btn-outline btn-sm">+ Tambah</button>
             <label for="fbm-csv-input" class="btn btn-outline btn-sm" style="cursor:pointer;margin:0;">📂 Import CSV</label>
             <input type="file" id="fbm-csv-input" accept=".csv,text/csv" style="display:none;" onchange="fbmImportCSV(this)">
+            <button onclick="fbmDownloadTemplate('judul')" class="btn btn-outline btn-sm" style="width:auto;">⬇ Template</button>
             <button onclick="fbmClearVariants()" class="btn btn-danger btn-sm">🗑 Hapus semua</button>
           </div>
           <div class="highlight-box" style="margin-top:8px;font-size:0.72rem;">
@@ -2822,6 +2826,42 @@ function fbmClearLocations() {
   fbmSaveLocations();
 }
 
+function fbmDownloadTemplate(type) {
+  let filename, content;
+  if (type === 'judul') {
+    filename = 'template_variasi_judul.csv';
+    content = [
+      'judul',
+      'Habutop Herbal Obat Asam Urat Original',
+      'Habutop 100% Alami Anti Asam Urat',
+      'Obat Asam Urat Habutop Terpercaya',
+      'Habutop Herbal Asam Urat Ampuh',
+      'Jual Habutop Obat Asam Urat Murah',
+    ].join('\r\n');
+  } else {
+    filename = 'template_variasi_lokasi.csv';
+    content = [
+      'lokasi',
+      'Jakarta Selatan, DKI Jakarta',
+      'Bandung, Jawa Barat',
+      'Surabaya, Jawa Timur',
+      'Medan, Sumatera Utara',
+      'Makassar, Sulawesi Selatan',
+      'Semarang, Jawa Tengah',
+      'Palembang, Sumatera Selatan',
+      'Denpasar, Bali',
+    ].join('\r\n');
+  }
+  const blob = new Blob(['\uFEFF' + content], { type: 'text/csv;charset=utf-8;' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href     = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+  showToast('Template ' + filename + ' didownload!');
+}
+
 function fbmImportLocations() {
   const raw = prompt('Paste daftar lokasi (satu per baris):');
   if (!raw) return;
@@ -2832,6 +2872,56 @@ function fbmImportLocations() {
   fbmSaveLocations();
   showToast(lines.length + ' lokasi berhasil ditambahkan!');
   fbmLog('Import ' + lines.length + ' lokasi baru. Total: ' + fbmLocations.length, 'info');
+}
+
+function fbmImportLocationsCSV(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    const text = e.target.result;
+    const lines = text.split(/\r?\n/);
+    const results = [];
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].trim();
+      if (!line) continue;
+
+      // Ambil kolom pertama — handle quoted CSV
+      let val = '';
+      if (line.startsWith('"')) {
+        const closeQuote = line.indexOf('"', 1);
+        val = closeQuote > 0 ? line.slice(1, closeQuote) : line.slice(1);
+      } else {
+        val = line.split(',')[0].trim();
+      }
+      val = val.trim();
+      if (!val) continue;
+
+      // Skip header baris pertama jika semua huruf tanpa angka
+      if (i === 0 && /^[a-zA-Z_\s]+$/.test(val) && !/[0-9]/.test(val)) {
+        fbmLog('CSV Lokasi: baris pertama "' + val + '" dilewati (header).', 'info');
+        continue;
+      }
+
+      results.push(val);
+    }
+
+    if (results.length === 0) {
+      showToast('Tidak ada lokasi valid di CSV.', 'warn');
+      input.value = '';
+      return;
+    }
+
+    fbmLocations = [...fbmLocations, ...results];
+    fbmRenderLocations();
+    fbmSaveLocations();
+    showToast('✅ ' + results.length + ' lokasi berhasil diimport dari CSV!');
+    fbmLog('Import CSV: ' + results.length + ' lokasi ditambahkan. Total: ' + fbmLocations.length, 'success');
+    input.value = '';
+  };
+  reader.onerror = () => { showToast('Gagal membaca file CSV.'); input.value = ''; };
+  reader.readAsText(file, 'UTF-8');
 }
 
 async function fbmStartPost() {
