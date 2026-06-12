@@ -2304,9 +2304,11 @@ function fbmCompressImage(file) {
         canvas.height = height;
         const ctx = canvas.getContext('2d');
         ctx.drawImage(img, 0, 0, width, height);
-        const dataUrl = canvas.toDataURL('image/jpeg', FBM_COMPRESS_QUALITY);
+        // Gunakan PNG — Facebook Marketplace menolak JPEG ('image/jpeg')
+        // PNG diterima dan tetap kecil untuk foto produk resolusi 1200px
+        const dataUrl = canvas.toDataURL('image/png');
         // Hitung ukuran hasil kompres (base64 → bytes)
-        const compressedBytes = Math.round((dataUrl.length - 'data:image/jpeg;base64,'.length) * 3 / 4);
+        const compressedBytes = Math.round((dataUrl.length - 'data:image/png;base64,'.length) * 3 / 4);
         resolve({ dataUrl, compressedBytes, origBytes: file.size, width, height });
       };
       img.src = e.target.result;
@@ -2327,8 +2329,8 @@ async function fbmAddImage(file) {
     const savedPct = Math.round((1 - compressedBytes / origBytes) * 100);
     fbmImages.push({
       dataUrl,
-      type: 'image/jpeg',
-      name: file.name,
+      type: 'image/png',
+      name: file.name.replace(/\.[^.]+$/, '.png'),
       source: 'local',
       origSize: origBytes,
       compSize: compressedBytes,
